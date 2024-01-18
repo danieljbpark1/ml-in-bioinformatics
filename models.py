@@ -1,6 +1,7 @@
+import math
 import torch
 import torch.nn as nn
-import torch.nn.Functional as F
+import torch.nn.functional as F
 
 class MLP(nn.Module):
     def __init__(self, hidden_layer_size: int):
@@ -13,7 +14,6 @@ class MLP(nn.Module):
         
         # one batch of samples has dimensions [B, 101, 4]
         # where B is the number of samples in the batch
-        self.flatten = nn.Flatten(start_dim=1)
         self.hidden_layer = nn.Linear(in_features=404, out_features=hidden_layer_size)
         self.output_layer = nn.Linear(in_features=hidden_layer_size + 1, out_features=1)
     
@@ -25,7 +25,7 @@ class MLP(nn.Module):
             a_batch (torch.Tensor): Batch of accessibility values per segment. Tensor size [B, 1]
         
         """
-        x = self.flatten(x_batch)  # x now has size [B, 404]
+        x = torch.flatten(x_batch, start_dim=1)  # x now has size [B, 404]
         
         x = self.hidden_layer(x)  # [B, hidden_layer_size]
         x = F.relu(x)
@@ -85,8 +85,74 @@ class LSTM(nn.Module):
         
 
 class CNN(nn.Module):
-    def __init__(self):
-        pass
+    def __init__(
+        self, 
+        conv_layer_1_num_channels,
+        conv_layer_1_kernel_size,
+        max_pool_layer_1_kernel_size,
+        conv_layer_2_num_channels,
+        conv_layer_2_kernel_size,
+        max_pool_layer_2_kernel_size,
+        mlp_hidden_layer_size,
+    ):
+        self.conv_layer_1 = nn.Conv1d(
+            in_channels=4,
+            out_channels=conv_layer_1_num_channels,
+            kernel_size=conv_layer_1_kernel_size,
+        )
+
+        self.conv_layer_2 = nn.Conv1d(
+            in_channels=conv_layer_1_num_channels,
+            out_channels=conv_layer_2_num_channels,
+            kernel_size=conv_layer_2_kernel_size,
+        )
+
+        self.max_pool_layer_1_kernel_size = max_pool_layer_1_kernel_size
+        self.max_pool_layer_2_kernel_size = max_pool_layer_2_kernel_size
+
+        conv_layer_1_length = 101 - (conv_layer_1_kernel_size - 1)
+        max_pool_layer_1_length = math.floor((conv_layer_1_length - (max_pool_layer_1_kernel_size - 1) - 1) / max_pool_layer_1_kernel_size + 1)
+        conv_layer_2_length = max_pool_layer_1_length - (conv_layer_2_kernel_size - 1)
+        max_pool_layer_2_length = math.floor((conv_layer_2_length - (max_pool_layer_2_kernel_size - 1) - 1) / max_pool_layer_2_kernel_size + 1)
+
+        self.mlp_1 = nn.Linear(
+            in_features=conv_layer_2_num_channels * max_pool_layer_2_length,
+            out_features=mlp_hidden_layer_size,
+        )
+        
+        self.mlp_2 = nn.Linear(
+            in_features=mlp_hidden_layer_size + 1,
+            out_features=1,
+        )
+
     
-    def forward(self):
-        pass
+    def forward(self, batch_x: torch.Tensor, batch_a: torch.Tensor):
+        """Performs forward pass with a batch of data.
+
+        Args:
+            batch_x (torch.Tensor): Batch of Chr22 segments. Tensor size [B, 101, 4]
+            batch_a (torch.Tensor): Batch of accessibility values per segment. Tensor size [B, 1]
+        """
+        x = torch.swapaxes(input=batch_x, axis0=1, axis1=2)  # [B, 4, 101]
+        
+        x = self.conv_layer_1(x) 
+        x = F.relu(x)
+        x = F.dropout1d(x, p=0.25)
+        x = F.max_pool1d(x, kernel_size=self.max_pool_layer_1_kernel_size)
+
+        x = self.conv_layer_2(x) 
+        x = F.relu(x)
+        x = F.dropout1d(x, p=0.25)
+        x = F.max_pool1d(x, kernel_size=self.max_pool_layer_2_kernel_size)
+
+        x = torch.flatten(x, start_dim=1)
+
+        x = self.mlp_1(x)
+        x = F.relu(x)
+        x = F.dropout(x, p=0.3)
+
+        x = torch.cat((x, batch_a), dim=1)
+
+        x = self.mlp_2(x)
+
+        return x
