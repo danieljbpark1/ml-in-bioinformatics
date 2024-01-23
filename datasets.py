@@ -5,16 +5,24 @@ import torch
 from torch.utils.data import Dataset
 
 def load_joblib_from_s3(bucket, object_key):
-    s3 = boto3.resource('s3')
     fs = s3fs.S3FileSystem() 
     filename = f"s3://{bucket}/{object_key}"
+
     with fs.open(filename, encoding='utf8') as fh:
         data = joblib.load(fh)
+
     return data
 
 class JUND_Dataset(Dataset):
-    def __init__(self, s3_bucket, data_dir):
-        """Loads X, y, w, a from data_dir."""
+    """JUND transcription factor Dataset."""
+
+    def __init__(self, s3_bucket: str, data_dir: str):
+        """Initializes instance of class JUND_Dataset.
+        
+        Args:
+            s3_bucket (str): S3 Bucket.
+            data_dir (str): Folder containing joblib files.
+        """
         super().__init__()
         
         # load X, y, w, a from data_dir
@@ -25,7 +33,7 @@ class JUND_Dataset(Dataset):
         
         # convert them into torch tensors
         self.X = torch.tensor(data=X, dtype=torch.float32)
-        self.y = torch.tensor(data=y, dtype=torch.int8)
+        self.y = torch.tensor(data=y, dtype=torch.float32)
         self.w = torch.tensor(data=w, dtype=torch.float32)
         self.a = torch.tensor(data=a, dtype=torch.float32)
         
@@ -34,5 +42,5 @@ class JUND_Dataset(Dataset):
         return self.X.size(dim=0)
         
     def __getitem__(self, idx):
-        """Returns X, y, w, a values at index idx."""
+        """Returns X, y, w, a Tensors at index idx."""
         return self.X[idx], self.y[idx], self.w[idx], self.a[idx]
