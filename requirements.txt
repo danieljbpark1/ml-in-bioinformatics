@@ -1,5 +1,7 @@
+boto3
 joblib
-pandas
 matplotlib
-torch
+pandas
 ray[train,tune]
+s3fs
+torch
