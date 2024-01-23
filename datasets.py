@@ -1,17 +1,27 @@
+import boto3
 import joblib
+import s3fs
 import torch
 from torch.utils.data import Dataset
 
+def load_joblib_from_s3(bucket, object_key):
+    s3 = boto3.resource('s3')
+    fs = s3fs.S3FileSystem() 
+    filename = f"s3://{bucket}/{object_key}"
+    with fs.open(filename, encoding='utf8') as fh:
+        data = joblib.load(fh)
+    return data
+
 class JUND_Dataset(Dataset):
-    def __init__(self, data_dir):
+    def __init__(self, s3_bucket, data_dir):
         """Loads X, y, w, a from data_dir."""
         super().__init__()
         
         # load X, y, w, a from data_dir
-        X = joblib.load(f"{data_dir}/shard-0-X.joblib")
-        y = joblib.load(f"{data_dir}/shard-0-y.joblib")
-        w = joblib.load(f"{data_dir}/shard-0-w.joblib")
-        a = joblib.load(f"{data_dir}/shard-0-a.joblib")
+        X = load_joblib_from_s3(bucket=s3_bucket, object_key=f"{data_dir}/shard-0-X.joblib")
+        y = load_joblib_from_s3(bucket=s3_bucket, object_key=f"{data_dir}/shard-0-y.joblib")
+        w = load_joblib_from_s3(bucket=s3_bucket, object_key=f"{data_dir}/shard-0-w.joblib")
+        a = load_joblib_from_s3(bucket=s3_bucket, object_key=f"{data_dir}/shard-0-a.joblib")
         
         # convert them into torch tensors
         self.X = torch.tensor(data=X, dtype=torch.float32)
