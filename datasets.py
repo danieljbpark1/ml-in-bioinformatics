@@ -4,11 +4,25 @@ import s3fs
 import torch
 from torch.utils.data import Dataset
 
-def load_joblib_from_s3(bucket, object_key):
-    fs = s3fs.S3FileSystem() 
-    filename = f"s3://{bucket}/{object_key}"
+def load_joblib_from_s3(
+    s3_dir: str, 
+    filename: str
+):
+    """Loads a .joblib file from an S3 Bucket.
 
-    with fs.open(filename, encoding='utf8') as fh:
+    Args:
+        s3_dir (str): Directory in S3 Bucket.
+        filename (str): Filename in `s3_dir`.
+
+    Returns:
+        Any: A Python object reconstructed by joblib.
+    """
+    assert s3_dir.startswith("s3://")
+
+    fs = s3fs.S3FileSystem() 
+    s3_object_key = f"{s3_dir}/{filename}"
+
+    with fs.open(s3_object_key, encoding='utf8') as fh:
         data = joblib.load(fh)
 
     return data
@@ -16,21 +30,25 @@ def load_joblib_from_s3(bucket, object_key):
 class JUND_Dataset(Dataset):
     """JUND transcription factor Dataset."""
 
-    def __init__(self, s3_bucket: str, data_dir: str):
+    def __init__(self, data_dir: str):
         """Initializes instance of class JUND_Dataset.
         
         Args:
-            s3_bucket (str): S3 Bucket.
-            data_dir (str): Folder containing joblib files.
+            data_dir (str): Path to directory containing joblib files.
         """
         super().__init__()
         
-        # load X, y, w, a from data_dir
-        X = load_joblib_from_s3(bucket=s3_bucket, object_key=f"{data_dir}/shard-0-X.joblib")
-        y = load_joblib_from_s3(bucket=s3_bucket, object_key=f"{data_dir}/shard-0-y.joblib")
-        w = load_joblib_from_s3(bucket=s3_bucket, object_key=f"{data_dir}/shard-0-w.joblib")
-        a = load_joblib_from_s3(bucket=s3_bucket, object_key=f"{data_dir}/shard-0-a.joblib")
-        
+        if data_dir.startswith("s3://"):
+            X = load_joblib_from_s3(s3_dir=data_dir, filename="shard-0-X.joblib")
+            y = load_joblib_from_s3(s3_dir=data_dir, filename="shard-0-y.joblib")
+            w = load_joblib_from_s3(s3_dir=data_dir, filename="shard-0-w.joblib")
+            a = load_joblib_from_s3(s3_dir=data_dir, filename="shard-0-a.joblib")
+        else:
+            X = joblib.load(filename=f"{data_dir}/shard-0-X.joblib")
+            y = joblib.load(filename=f"{data_dir}/shard-0-y.joblib")
+            w = joblib.load(filename=f"{data_dir}/shard-0-w.joblib")
+            a = joblib.load(filename=f"{data_dir}/shard-0-a.joblib")
+
         # convert them into torch tensors
         self.X = torch.tensor(data=X, dtype=torch.float32)
         self.y = torch.tensor(data=y, dtype=torch.float32)
