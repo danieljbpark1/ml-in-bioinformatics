@@ -5,3 +5,4 @@ pandas
 ray[train,tune]
 s3fs
 torch
+optuna
