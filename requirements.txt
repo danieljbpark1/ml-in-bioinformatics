@@ -2,6 +2,7 @@ boto3
 joblib
 matplotlib
 pandas
+python-dotenv
 ray[train,tune]
 s3fs
 torch
