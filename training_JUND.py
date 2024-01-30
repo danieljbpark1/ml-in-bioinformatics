@@ -7,8 +7,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
-from .datasets import JUND_Dataset
-from .models import MLP
+from datasets import JUND_Dataset
+from models import MLP
 
 def get_dataloader(
     data_dir: str,
@@ -98,7 +98,7 @@ def validate_epoch(
     accuracy = weight_correct / weight_total
     return accuracy.item()
 
-class Objective():
+class Objective_MLP():
     def __init__(
         self, 
         data_dir_train: str, 
@@ -155,41 +155,3 @@ class Objective():
     def callback(self, study: optuna.study.Study, trial: optuna.trial.FrozenTrial):
         if study.best_trial.number == trial.number:
             self.best_model = self._model
-
-
-if __name__ == "__main__":
-    DATA_DIR_TRAIN = os.getenv("DATA_DIR_TRAIN")
-    DATA_DIR_VALIDATION = os.getenv("DATA_DIR_VALIDATION")
-    DATA_DIR_TEST = os.getenv("DATA_DIR_TEST")
-    
-    objective = Objective(
-        data_dir_train=DATA_DIR_TRAIN,
-        data_dir_validation=DATA_DIR_VALIDATION,
-    )
-    study = optuna.create_study(direction="maximize")
-    study.optimize(func=objective, n_trials=20, timeout=1800, callbacks=[objective.callback])
-
-    pruned_trials = study.get_trials(deepcopy=False, states=[TrialState.PRUNED])
-    complete_trials = study.get_trials(deepcopy=False, states=[TrialState.COMPLETE])
-
-    print("Study statistics: ")
-    print("  Number of finished trials: ", len(study.trials))
-    print("  Number of pruned trials: ", len(pruned_trials))
-    print("  Number of complete trials: ", len(complete_trials))
-
-    print("Best trial:")
-    trial = study.best_trial
-
-    print("  Value: ", trial.value)
-
-    print("  Params: ")
-    for key, value in trial.params.items():
-        print("    {}: {}".format(key, value))
-
-    dataloader_test = get_dataloader(data_dir=DATA_DIR_TEST, batch_size=1024)
-    accuracy_test = validate_epoch(
-        model=objective.best_model,
-        data_loader=dataloader_test,
-        device="cuda:0" if torch.cuda.is_available() else "cpu",
-    )
-    print("Accuracy of best model after hyperparameter tuning on test dataset: ", accuracy_test)
