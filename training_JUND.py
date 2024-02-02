@@ -1,3 +1,4 @@
+from typing import Any
 import optuna
 from optuna.trial import Trial, TrialState
 import os
@@ -8,7 +9,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 
 from datasets import JUND_Dataset
-from models import MLP
+from models import MLP, LSTM, CNN
 
 def get_dataloader(
     data_dir: str,
@@ -98,37 +99,48 @@ def validate_epoch(
     accuracy = weight_correct / weight_total
     return accuracy.item()
 
-class Objective_MLP():
+class Objective_Base():
     def __init__(
         self, 
         data_dir_train: str, 
         data_dir_validation: str,
-    ) -> None:
+        batch_size_train: int,
+        batch_size_validation: int,    
+    ):
         self.dataloader_train = get_dataloader(
             data_dir=data_dir_train,
-            batch_size=256,
+            batch_size=batch_size_train,
         )
         self.dataloader_validation = get_dataloader(
             data_dir=data_dir_validation,
-            batch_size=1024,
+            batch_size=batch_size_validation,
         )
         self.best_model = None
         self._model = None
 
-    def __call__(self, trial: Trial):    
-        num_epochs = trial.suggest_int(name="epochs", low=10, high=30, step=10)
-        hidden_layer_size = trial.suggest_categorical(name="MLP_hidden_layer_size", choices=[16, 32, 64, 128,])
-        lr = trial.suggest_float(name="lr", low=1e-4, high=1e-1, log=True)
+    def perform_training(
+        self, 
+        model: nn.Module, 
+        device: str, 
+        optimizer: optim.Optimizer, 
+        num_epochs: int, 
+        trial: Trial
+    ) -> float:
+        """Performs epochs of model training and validation.
 
-        model = MLP(hidden_layer_size=hidden_layer_size)
-        device = "cuda:0" if torch.cuda.is_available() else "cpu"
-        if torch.cuda.device_count() > 1:
-            model = nn.DataParallel(model)
+        Args:
+            model (nn.Module): PyTorch model.
+            device (str): Device on which to allocate Tensors.
+            optimizer (optim.Optimizer): Optimizer to update model parameters.
+            num_epochs (int): Number of epochs.
+            trial (Trial): Optuna Trial for hyperparameter tuning.
 
-        model.to(device)
+        Raises:
+            optuna.exceptions.TrialPruned: Trial pruned by Study.
 
-        optimizer = optim.Adam(params=model.parameters(), lr=lr)
-
+        Returns:
+            float: Last epoch validation accuracy.
+        """
         for epoch in range(num_epochs):
             train_epoch(
                 model=model,
@@ -151,7 +163,119 @@ class Objective_MLP():
         self._model = model
 
         return accuracy
-    
-    def callback(self, study: optuna.study.Study, trial: optuna.trial.FrozenTrial):
+
+    def callback(
+        self, 
+        study: optuna.study.Study, 
+        trial: optuna.trial.FrozenTrial
+    ):
+        """Updates best model state.
+
+        Args:
+            study (optuna.study.Study): Hyperparameter tuning Study.
+            trial (optuna.trial.FrozenTrial): One Trial of tuning.
+        """
         if study.best_trial.number == trial.number:
             self.best_model = self._model
+
+class Objective_MLP(Objective_Base):
+    def __init__(
+        self, 
+        data_dir_train: str, 
+        data_dir_validation: str,
+    ) -> None:
+        super().__init__(
+            data_dir_train=data_dir_train,
+            data_dir_validation=data_dir_validation,
+            batch_size_train=256,
+            batch_size_validation=1024,
+        )
+
+    def __call__(self, trial: Trial) -> float:    
+        num_epochs = trial.suggest_int(name="epochs", low=10, high=30, step=10)
+        hidden_layer_size = trial.suggest_categorical(name="MLP_hidden_layer_size", choices=[16, 32, 64, 128,])
+        lr = trial.suggest_float(name="lr", low=1e-4, high=1e-1, log=True)
+
+        model = MLP(hidden_layer_size=hidden_layer_size)
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        if torch.cuda.device_count() > 1:
+            model = nn.DataParallel(model)
+
+        model.to(device)
+
+        optimizer = optim.Adam(params=model.parameters(), lr=lr)
+
+        return self.perform_training(
+            model=model, 
+            device=device, 
+            optimizer=optimizer, 
+            num_epochs=num_epochs, 
+            trial=trial
+        )
+
+
+class Objective_LSTM(Objective_Base):
+    def __init__(
+        self,
+        data_dir_train: str,
+        data_dir_validation: str,
+    ) -> None:
+        super().__init__(
+            data_dir_train=data_dir_train,
+            data_dir_validation=data_dir_validation,
+            batch_size_train=256,
+            batch_size_validation=1024,
+        )
+
+    def __call__(self, trial: Trial) -> float:
+        """select how many epochs you want to use and to choose the hidden dimension."""
+        num_epochs = trial.suggest_int(name="epochs", low=10, high=30, step=10)
+        lstm_hidden_layer_size = trial.suggest_categorical(name="LSTM_hidden_layer_size", choices=[16, 32, 64, 128,])
+        mlp_hidden_layer_size = trial.suggest_categorical(name="MLP_hidden_layer_size", choices=[16, 32, 64])
+        lr = trial.suggest_float(name="lr", low=1e-4, high=1e-1, log=True)
+
+        model = LSTM(
+            lstm_hidden_layer_size=lstm_hidden_layer_size,
+            mlp_hidden_layer_size=mlp_hidden_layer_size,
+        )
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        if torch.cuda.device_count() > 1:
+            model = nn.DataParallel(model)
+
+        model.to(device)
+
+        optimizer = optim.Adam(params=model.parameters(), lr=lr)
+
+        return self.perform_training(
+            model=model, 
+            device=device, 
+            optimizer=optimizer, 
+            num_epochs=num_epochs, 
+            trial=trial
+        )
+
+
+class Objective_CNN(Objective_Base):
+    def __init__(self, data_dir_train: str, data_dir_validation: str):
+        super().__init__(
+            data_dir_train=data_dir_train, 
+            data_dir_validation=data_dir_validation, 
+            batch_size_train=256, 
+            batch_size_validation=1024,
+        )
+    
+    def __call__(self, trial: Trial):
+        num_epochs = trial.suggest_int(name="epochs", low=10, high=30, step=10)
+
+        conv_layer_1_num_channels
+        mlp_hidden_layer_size = trial.suggest_categorical(name="MLP_hidden_layer_size", choices=[16, 32, 64])
+
+        model = CNN(
+            conv_layer_1_num_channels=,
+            conv_layer_1_kernel_size=4,
+            max_pool_layer_1_kernel_size=3,
+            conv_layer_2_num_channels=1,
+            conv_layer_2_kernel_size=,
+            max_pool_layer_2_kernel_size=,
+            mlp_hidden_layer_size=1,
+        )
