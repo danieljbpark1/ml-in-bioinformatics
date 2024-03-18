@@ -266,16 +266,37 @@ class Objective_CNN(Objective_Base):
     
     def __call__(self, trial: Trial):
         num_epochs = trial.suggest_int(name="epochs", low=10, high=30, step=10)
+        lr = trial.suggest_float(name="lr", low=1e-4, high=1e-1, log=True)
 
-        conv_layer_1_num_channels
-        mlp_hidden_layer_size = trial.suggest_categorical(name="MLP_hidden_layer_size", choices=[16, 32, 64])
+        conv_layer_1_num_channels = trial.suggest_categorical(name="conv_layer_1_num_channels", choices=[4, 8, 16,])
+        conv_layer_1_kernel_size = trial.suggest_categorical(name="conv_layer_1_kernel_size", choices=[3, 5, 9,])
+
+        conv_layer_2_num_channels = trial.suggest_categorical(name="conv_layer_2_num_channels", choices=[4, 8, 16,])
+        conv_layer_2_kernel_size = trial.suggest_categorical(name="conv_layer_2_kernel_size", choices=[3, 5, 9,])
+
+        mlp_hidden_layer_size = trial.suggest_categorical(name="MLP_hidden_layer_size", choices=[16, 32, 64,])
 
         model = CNN(
-            conv_layer_1_num_channels=,
-            conv_layer_1_kernel_size=4,
+            conv_layer_1_num_channels=conv_layer_1_num_channels,
+            conv_layer_1_kernel_size=conv_layer_1_kernel_size,
             max_pool_layer_1_kernel_size=3,
-            conv_layer_2_num_channels=1,
-            conv_layer_2_kernel_size=,
-            max_pool_layer_2_kernel_size=,
-            mlp_hidden_layer_size=1,
+            conv_layer_2_num_channels=conv_layer_2_num_channels,
+            conv_layer_2_kernel_size=conv_layer_2_kernel_size,
+            max_pool_layer_2_kernel_size=3,
+            mlp_hidden_layer_size=mlp_hidden_layer_size,
+        )
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        if torch.cuda.device_count() > 1:
+            model = nn.DataParallel(model)
+
+        model.to(device)
+
+        optimizer = optim.Adam(params=model.parameters(), lr=lr)
+
+        return self.perform_training(
+            model=model, 
+            device=device, 
+            optimizer=optimizer, 
+            num_epochs=num_epochs, 
+            trial=trial
         )

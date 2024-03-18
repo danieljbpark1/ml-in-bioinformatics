@@ -95,6 +95,8 @@ class CNN(nn.Module):
         max_pool_layer_2_kernel_size,
         mlp_hidden_layer_size,
     ):
+        super().__init__()
+        
         self.conv_layer_1 = nn.Conv1d(
             in_channels=4,
             out_channels=conv_layer_1_num_channels,
